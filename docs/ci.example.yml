@@ -1,0 +1,23 @@
+name: Verify source
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/mcp-gateway/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm ci --prefix apps/mcp-gateway
+      - run: npm run verify --prefix apps/mcp-gateway
+      - run: npm run build --prefix apps/mcp-gateway

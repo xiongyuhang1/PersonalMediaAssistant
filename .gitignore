@@ -1,0 +1,39 @@
+# Credentials and local runtime data
+.env
+.env.*
+!.env.example
+secrets/
+data/
+exports/
+*.db
+*.db-*
+*.sqlite*
+*.litedb
+*.log
+
+# Research evidence contains local metadata and third-party source snapshots.
+research/evidence/
+__pycache__/
+*.pyc
+
+node_modules/
+dist/
+coverage/
+.openai/local/
+.local/
+outputs/
+**/bin/
+**/obj/
+
+# Private deployment identifiers and generated tool state
+deployment.local.json
+.dev.vars*
+**/.wrangler/
+**/.sites-runtime/
+**/.vinext/
+**/.next/
+**/.openai/local/
+*.dpapi
+*.pdb
+*.tsbuildinfo
+*.jsonl

@@ -1,0 +1,25 @@
+import { env } from 'cloudflare:workers';
+import { requireChatGPTUser } from '@/app/chatgpt-auth';
+import { MediaService, type CloudEnv } from '@/lib/cloud/service';
+import { crossPlatformTimeline, timelineLanes, timelineLabels } from '@/lib/cloud/timeline';
+import { platforms } from '@/lib/cloud/contracts';
+export const dynamic = 'force-dynamic';
+const names = { steam: 'Steam', bilibili: 'B站', netease: '网易云音乐', dandanplay: '弹弹play' };
+const localDay = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+const asString = (v: string | string[] | undefined) => typeof v === 'string' ? v : '';
+const validDay = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day + 'T00:00:00+08:00')) && localDay(new Date(day + 'T00:00:00+08:00')) === day;
+export default async function Timeline({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const user = await requireChatGPTUser('/timeline'); const service = new MediaService(env as CloudEnv); await service.store.owner(user.userId);
+  const p = await searchParams ?? {}; const after = asString(p.after) || localDay(new Date(Date.now() - 30 * 86400000)); const before = asString(p.before) || localDay(new Date(Date.now() + 86400000));
+  const platform = platforms.find(v => v === p.platform); const lane = timelineLanes.find(v => v === p.lane); const keyword = asString(p.keyword); const cursor = asString(p.cursor);
+  let data: Awaited<ReturnType<typeof crossPlatformTimeline>> | null = null;
+  try { if (validDay(after) && validDay(before)) data = await crossPlatformTimeline(service.store, { after: after + 'T00:00:00+08:00', before: before + 'T00:00:00+08:00', ...(platform ? { platforms: [platform] } : {}), ...(lane ? { lanes: [lane] } : {}), keyword, ...(cursor ? { cursor } : {}) }); } catch { /* Show a bounded, non-sensitive form error. */ }
+  const next = new URLSearchParams({ after, before, ...(platform ? { platform } : {}), ...(lane ? { lane } : {}), ...(keyword ? { keyword } : {}), ...(data?.next_cursor ? { cursor: data.next_cursor } : {}) });
+  return <main className="shell record-page"><nav className="topbar"><a className="brand" href="/"><span className="brand-mark">m<span>·</span></span><span>PERSONAL MEDIA<span className="brand-sub">你的个人兴趣空间</span></span></a><a className="refresh-link" href="/">返回我的记录 ↗</a></nav>
+    <section className="record-intro"><span className="section-kicker">留下时间的依据</span><h1>我的媒体时间轴</h1><p>观看观察、收藏日期与采集快照各自标注。所有日期按北京时间筛选与显示。</p></section>
+    <form method="get" action="/timeline" className="timeline-filters"><label>开始日期<input type="date" name="after" defaultValue={validDay(after) ? after : ''} required/></label><label>截止日期（不含当天）<input type="date" name="before" defaultValue={validDay(before) ? before : ''} required/></label><label>来源<select name="platform" defaultValue={platform ?? ''}><option value="">全部平台</option>{platforms.map(v => <option key={v} value={v}>{names[v]}</option>)}</select></label><label>记录类型<select name="lane" defaultValue={lane ?? ''}><option value="">全部类型</option>{timelineLanes.map(v => <option key={v} value={v}>{timelineLabels[v]}</option>)}</select></label><label>作品名称<input name="keyword" defaultValue={keyword} maxLength={200} placeholder="可留空"/></label><button type="submit">查询时间轴</button></form>
+    {!data && <p role="alert" className="discovery-message">未能完成查询，请检查日期范围或重新查询；过期或不同筛选条件的续页链接不能继续使用。</p>}
+    {data && <><div className="timeline-summary" aria-label="记录类型统计">{data.lane_totals.map((r: any) => <span key={r.lane}>{timelineLabels[r.lane as keyof typeof timelineLabels]} · {r.records}</span>)}</div><p className="discovery-message">“已看完但无日期”的作品显示的是状态采集时间。最近列表与排行不能当作完整播放事件，Steam样本只从本服务开始采集后保留。</p><section aria-label="时间轴记录" className="timeline-list">{data.items.length ? data.items.map((item, i) => <article className={'timeline-row lane-' + item.lane} key={item.platform + ':' + item.dataset + ':' + item.content_id + ':' + i}><time dateTime={item.at}>{new Intl.DateTimeFormat('zh-CN', {timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short'}).format(new Date(item.at))}</time><div><div className="timeline-badges"><span>{names[item.platform as keyof typeof names]}</span><span>{item.time_meaning}</span></div><h2>{item.title}</h2>{item.artists?.length ? <p>{item.artists.join(' / ')}</p> : null}{item.all_episodes_completed && <p>已全部看完；此条快照不提供完成日期。</p>}{item.lane === 'library_sample' && <p>{item.sampled_games} 款有时长数据的游戏 · 累计 {item.cumulative_minutes?.toLocaleString('zh-CN')} 分钟</p>}{item.parent_id && <p>所属番剧 ID：{item.parent_id}</p>}</div></article>) : <p className="empty-records">这个范围内暂无可显示的已同步记录。</p>}</section>{data.has_more && <a className="text-action" href={'/timeline?' + next.toString()}>继续查看更早的记录 ↘</a>}<p className="record-footnote">此页只查询已同步记录；本机离线期间的新B站记录尚未上传。未出现的记录不代表从未接触。</p></>}
+    <footer><span>PERSONAL MEDIA ASSISTANT</span><span>记录时间，也保留未知。</span></footer>
+  </main>;
+}
